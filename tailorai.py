@@ -1,185 +1,64 @@
 import streamlit as st
 import google.generativeai as genai
 import datetime
-import re
 
-# Configure Gemini API
+# =============== Gemini Setup ===============
 genai.configure(api_key="AIzaSyB2UAI9PB6qIOI54gVNMX5KVvgoV-RBI1A")
-model = genai.GenerativeModel("gemini-pro")
+model = genai.GenerativeModel("gemini-1.5-flash")  # Use 1.5 flash free tier
 
-# Initialize chat history in session state
-if "chat_history" not in st.session_state:
-    st.session_state.chat_history = []
-
-# Initialize user profile info in session state
-if "profile" not in st.session_state:
-    st.session_state.profile = {
-        "height_cm": None,
-        "weight_kg": None,
-        "age": None,
-        "gender": None,
-        "fabric": None,
-        "fit": None,
-        "use_case": None,
-        "style": None,
-        "brands": []
-    }
-
-st.title("🧥 TailorAI Chatbot — Your Clothing Size & Fashion Assistant")
-
+# =============== Helper Functions ===============
 def convert_units(height, unit_h, weight, unit_w):
-    if height is None or weight is None:
-        return None, None
     height_cm = height * 2.54 if unit_h == "inches" else height
     weight_kg = weight * 0.453592 if unit_w == "lbs" else weight
-    return height_cm, weight_kg
+    return round(height_cm, 1), round(weight_kg, 1)
 
-def generate_prompt(profile, conversation_history):
-    # Compose prompt for Gemini with profile & conversation
+def generate_prompt(height, weight, gender, age, fabric, fit, use_case, style, brands, language):
     base_prompt = (
-        f"A {profile.get('age', '?')}-year-old {profile.get('gender', 'person')} with a height of {profile.get('height_cm', '?')} cm "
-        f"and weight of {profile.get('weight_kg', '?')} kg is shopping for {profile.get('fabric', '?')} clothes to wear for {profile.get('use_case', '?')}. "
-        f"They prefer a {profile.get('fit', '?')} fit and their style is {profile.get('style', '?')}. "
-        f"Preferred brands are: {', '.join(profile.get('brands', [])) or 'not specified'}. "
-        f"Suggest the best size (XS–XXL) with explanation.\n"
-        "Conversation:\n"
+        f"{age}-year-old {gender}, {height} cm tall, {weight} kg, "
+        f"shopping for {fabric} clothes for {use_case}, prefers {fit} fit, style {style}. "
+        f"Favorite brands: {', '.join(brands)}. Suggest best size XS–XXL briefly."
     )
-    for msg in conversation_history[-6:]:
-        role = msg["role"].capitalize()
-        content = msg["content"]
-        base_prompt += f"{role}: {content}\n"
-    base_prompt += "Assistant:"
+    if language == "Hindi":
+        base_prompt += " जवाब हिंदी में दें।"
     return base_prompt
 
-def get_gemini_response(prompt):
+def get_size_from_gemini(prompt):
     try:
-        response = model.generate_content(prompt)
-        return response.text
+        response = model.generate_content(prompt, max_tokens=50)  # limit tokens for free tier
+        return response.text.strip()
     except Exception as e:
-        return f"Error: {str(e)}"
+        return f"Error: {e}"
 
-def extract_numbers(text):
-    return list(map(float, re.findall(r"\d+\.?\d*", text)))
+# =============== Streamlit UI ===============
+st.set_page_config(page_title="AI Cloth Size Predictor (Flash)", page_icon="🧥")
+st.title("🧥 AI Clothing Size Predictor (Gemini 1.5 Flash)")
 
-def extract_info_from_text(text):
-    # Simple extraction logic (can be improved with NLP)
-    info = {}
-    text = text.lower()
-    
-    # Height
-    if "cm" in text:
-        nums = extract_numbers(text)
-        if nums:
-            info["height_cm"] = nums[0]
-    elif "inch" in text or "inches" in text:
-        nums = extract_numbers(text)
-        if nums:
-            info["height_cm"] = nums[0] * 2.54
-    
-    # Weight
-    if "kg" in text:
-        nums = extract_numbers(text)
-        if nums:
-            info["weight_kg"] = nums[0]
-    elif "lb" in text or "lbs" in text:
-        nums = extract_numbers(text)
-        if nums:
-            info["weight_kg"] = nums[0] * 0.453592
+language = st.selectbox("🌐 Choose Language", ["English", "Hindi"])
 
-    # Age
-    if "year" in text:
-        nums = extract_numbers(text)
-        if nums:
-            info["age"] = int(nums[0])
+hour = datetime.datetime.now().hour
+greet = "Good morning" if hour < 12 else "Good afternoon" if hour < 18 else "Good evening"
+st.markdown(f"👋 {greet}! Let's find your ideal clothing size.")
 
-    # Gender
-    for g in ["male", "female", "non-binary"]:
-        if g in text:
-            info["gender"] = g
-            break
+unit_h = st.radio("Height Unit", ["cm", "inches"], horizontal=True)
+unit_w = st.radio("Weight Unit", ["kg", "lbs"], horizontal=True)
 
-    # Fabric
-    for f in ["cotton", "polyester", "wool", "linen", "denim", "silk"]:
-        if f in text:
-            info["fabric"] = f
-            break
+height = st.number_input("Height", min_value=50.0, max_value=250.0, value=170.0)
+weight = st.number_input("Weight", min_value=20.0, max_value=200.0, value=70.0)
+age = st.slider("Age", 10, 100, 25)
+gender = st.selectbox("Gender", ["male", "female", "non-binary", "prefer not to say"])
 
-    # Fit
-    for f in ["slim", "regular", "loose"]:
-        if f in text:
-            info["fit"] = f
-            break
+fabric = st.selectbox("Fabric Type", ["cotton", "polyester", "wool", "linen", "denim", "silk", "other"])
+fit = st.selectbox("Fit Preference", ["slim", "regular", "loose"])
+use_case = st.selectbox("Use Case", ["casual", "formal", "sports", "party", "office", "other"])
+style = st.selectbox("Style", ["Minimal", "Streetwear", "Formal", "Boho", "Sporty", "Classic"])
+brands = st.multiselect("Favorite Brands", ["H&M", "Zara", "Nike", "Uniqlo", "Levi's", "Adidas"])
 
-    # Use case
-    for u in ["casual", "formal", "sports", "party", "office"]:
-        if u in text:
-            info["use_case"] = u
-            break
+if st.button("🎯 Predict My Size"):
+    height_cm, weight_kg = convert_units(height, unit_h, weight, unit_w)
+    prompt = generate_prompt(height_cm, weight_kg, gender, age, fabric, fit, use_case, style, brands, language)
 
-    # Style
-    for s in ["minimal", "streetwear", "formal", "boho", "sporty", "classic"]:
-        if s in text:
-            info["style"] = s
-            break
+    with st.spinner("Gemini 1.5 Flash generating your size..."):
+        result = get_size_from_gemini(prompt)
 
-    # Brands - simple check
-    possible_brands = ["h&m", "zara", "nike", "uniqlo", "levi's", "adidas"]
-    brands_found = [b for b in possible_brands if b in text]
-    if brands_found:
-        info["brands"] = brands_found
-
-    return info
-
-def chat_bubble(message, is_user):
-    color = "#DCF8C6" if is_user else "#F0F0F0"
-    align = "right" if is_user else "left"
-    st.markdown(
-        f"""
-        <div style="
-            background-color: {color};
-            padding: 10px 15px;
-            border-radius: 15px;
-            margin: 10px;
-            max-width: 70%;
-            float: {align};
-            clear: both;
-            ">
-            {message}
-        </div>
-        """, unsafe_allow_html=True
-    )
-
-# Show conversation history
-for chat in st.session_state.chat_history:
-    chat_bubble(chat["content"], chat["role"]=="user")
-
-# User input box
-user_input = st.text_input("💬 Ask TailorAI anything or enter your measurements:")
-
-if user_input:
-    # Save user message
-    st.session_state.chat_history.append({"role": "user", "content": user_input})
-
-    # Extract info from user message to update profile
-    new_info = extract_info_from_text(user_input)
-    st.session_state.profile.update({k: v for k, v in new_info.items() if v is not None})
-
-    # Check if enough info is present to make a prediction
-    profile = st.session_state.profile
-    needed_fields = ["height_cm", "weight_kg", "age", "gender", "fabric", "fit", "use_case", "style"]
-    missing = [f for f in needed_fields if not profile.get(f)]
-    if missing:
-        reply = (
-            f"I need a bit more info to help you better. Could you please tell me your "
-            f"{', '.join(missing)}?"
-        )
-    else:
-        # Generate prompt & get response from Gemini
-        prompt = generate_prompt(profile, st.session_state.chat_history)
-        reply = get_gemini_response(prompt)
-
-    # Save assistant reply
-    st.session_state.chat_history.append({"role": "assistant", "content": reply})
-
-    # Rerun so chat history updates (Streamlit quirk)
-    st.experimental_rerun()
+    st.success("✅ Size Recommendation")
+    st.write(result)
