@@ -4,7 +4,7 @@ import datetime
 
 # Configure Gemini API
 genai.configure(api_key="AIzaSyB2UAI9PB6qIOI54gVNMX5KVvgoV-RBI1A")
-model = genai.GenerativeModel("gemini-pro")
+model = genai.GenerativeModel("gemini-1.5-flash")
 
 # Initialize chat history in session state
 if "chat_history" not in st.session_state:
