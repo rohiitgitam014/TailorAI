@@ -1,81 +1,64 @@
 import streamlit as st
 import google.generativeai as genai
-from datetime import datetime
+import datetime
 
-# --- Configure Gemini API ---
-genai.configure(api_key="AIzaSyB2UAI9PB6qIOI54gVNMX5KVvgoV-RBI1A")  # Replace with your Gemini API Key
-model = genai.GenerativeModel("gemini-pro")
+# =============== Gemini Setup ===============
+genai.configure(api_key="AIzaSyB2UAI9PB6qIOI54gVNMX5KVvgoV-RBI1A")
+model = genai.GenerativeModel("gemini-1.5-flash")  # Use 1.5 flash free tier
 
-# --- Page Config ---
-st.set_page_config(page_title="TailorAI Chatbot", layout="centered")
+# =============== Helper Functions ===============
+def convert_units(height, unit_h, weight, unit_w):
+    height_cm = height * 2.54 if unit_h == "inches" else height
+    weight_kg = weight * 0.453592 if unit_w == "lbs" else weight
+    return round(height_cm, 1), round(weight_kg, 1)
 
-st.title("🧵 TailorAI Chatbot — Your Personal Clothing Size Assistant")
-
-# --- Initialize chat history ---
-if "chat_history" not in st.session_state:
-    st.session_state.chat_history = []
-
-# --- Display chat history (top) ---
-for chat in st.session_state.chat_history:
-    is_user = chat["role"] == "user"
-    align = "right" if is_user else "left"
-    bubble_color = "#DCF8C6" if is_user else "#F1F0F0"
-    st.markdown(
-        f"""
-        <div style="background-color: {bubble_color}; padding: 10px 15px;
-                    border-radius: 15px; margin: 5px 0; max-width: 75%;
-                    float: {align}; clear: both; font-size: 16px;">
-            {chat["content"]}
-            <div style="text-align: right; font-size: 12px; color: gray;">
-                {chat["timestamp"]}
-            </div>
-        </div>
-        """,
-        unsafe_allow_html=True
+def generate_prompt(height, weight, gender, age, fabric, fit, use_case, style, brands, language):
+    base_prompt = (
+        f"{age}-year-old {gender}, {height} cm tall, {weight} kg, "
+        f"shopping for {fabric} clothes for {use_case}, prefers {fit} fit, style {style}. "
+        f"Favorite brands: {', '.join(brands)}. Suggest best size XS–XXL briefly."
     )
+    if language == "Hindi":
+        base_prompt += " जवाब हिंदी में दें।"
+    return base_prompt
 
-st.markdown("---")
-
-# --- Input form (bottom) ---
-with st.form("chat_form", clear_on_submit=True):
-    user_input = st.text_input("Type your question or measurement details here:")
-    submitted = st.form_submit_button("Send")
-
-# --- Get Gemini response ---
-def get_gemini_response(prompt):
+def get_size_from_gemini(prompt):
     try:
-        response = model.generate_content(prompt)
-        return response.text
+        response = model.generate_content(prompt, max_tokens=50)  # limit tokens for free tier
+        return response.text.strip()
     except Exception as e:
-        return f"⚠️ Error: {str(e)}"
+        return f"Error: {e}"
 
-# --- Handle user input ---
-if submitted and user_input:
-    timestamp = datetime.now().strftime("%H:%M")
+# =============== Streamlit UI ===============
+st.set_page_config(page_title="AI Cloth Size Predictor (Flash)", page_icon="🧥")
+st.title("🧥 AI Clothing Size Predictor (Gemini 1.5 Flash)")
 
-    # Add user message to history
-    st.session_state.chat_history.append({
-        "role": "user",
-        "content": user_input,
-        "timestamp": timestamp
-    })
+language = st.selectbox("🌐 Choose Language", ["English", "Hindi"])
 
-    # Build prompt for Gemini with context
-    last_messages = "\n".join(
-        f"{msg['role'].capitalize()}: {msg['content']}" for msg in st.session_state.chat_history[-5:]
-    )
-    prompt = f"You are TailorAI, a fashion and clothing size expert chatbot.\n{last_messages}\nAssistant:"
+hour = datetime.datetime.now().hour
+greet = "Good morning" if hour < 12 else "Good afternoon" if hour < 18 else "Good evening"
+st.markdown(f"👋 {greet}! Let's find your ideal clothing size.")
 
-    # Get Gemini's reply
-    reply_text = get_gemini_response(prompt)
+unit_h = st.radio("Height Unit", ["cm", "inches"], horizontal=True)
+unit_w = st.radio("Weight Unit", ["kg", "lbs"], horizontal=True)
 
-    # Add AI response to history
-    st.session_state.chat_history.append({
-        "role": "assistant",
-        "content": reply_text,
-        "timestamp": datetime.now().strftime("%H:%M")
-    })
+height = st.number_input("Height", min_value=50.0, max_value=250.0, value=170.0)
+weight = st.number_input("Weight", min_value=20.0, max_value=200.0, value=70.0)
+age = st.slider("Age", 10, 100, 25)
+gender = st.selectbox("Gender", ["male", "female", "non-binary", "prefer not to say"])
 
-    # Rerun to update chat view
-    st.experimental_rerun()
+fabric = st.selectbox("Fabric Type", ["cotton", "polyester", "wool", "linen", "denim", "silk", "other"])
+fit = st.selectbox("Fit Preference", ["slim", "regular", "loose"])
+use_case = st.selectbox("Use Case", ["casual", "formal", "sports", "party", "office", "other"])
+style = st.selectbox("Style", ["Minimal", "Streetwear", "Formal", "Boho", "Sporty", "Classic"])
+brands = st.multiselect("Favorite Brands", ["H&M", "Zara", "Nike", "Uniqlo", "Levi's", "Adidas"])
 
+if st.button("🎯 Predict My Size"):
+    height_cm, weight_kg = convert_units(height, unit_h, weight, unit_w)
+    prompt = generate_prompt(height_cm, weight_kg, gender, age, fabric, fit, use_case, style, brands, language)
+
+    with st.spinner("Gemini 1.5 Flash generating your size..."):
+        result = get_size_from_gemini(prompt)
+
+    st.success("✅ Size Recommendation")
+    st.write(result)
